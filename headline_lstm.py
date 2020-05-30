@@ -1,17 +1,20 @@
 import torch
-import torchvision
 from torch import nn
 import numpy as np
 import torch.nn.functional as F
 
 
-training_data = ['H', 'e', 'l', 'l', 'o']
-char_batch = training_data[:1000]  # Taking the characters for the entire dataset is excessive
+with open('tales.txt', 'r') as f:
+    text = f.read()
 
-# Encode/Decode characters
-chars = list(set(char_batch))
-char_to_idx = {ch: i for i, ch in enumerate(chars)}
-idx_to_char = {i: ch for i, ch in enumerate(chars)}
+text[:100]
+
+chars = tuple(set(text))
+int2char = dict(enumerate(chars))
+char2int = {ch: ii for ii, ch in int2char.items()}
+
+encoded = np.array([char2int[ch] for ch in text])
+encoded[:100]
 
 # Set hyperparameters
 lr = 1e-3
@@ -22,29 +25,16 @@ seq_length = 100
 n_epochs = 20
 
 
-def one_hot_encode(arr, n_chars):
+def one_hot_encode(arr, n_labels):
     """
     :param arr: Input characters
     :param n_labels: (int) Number of individual characters
     :return: Matrix of one-hot encodings (each row is an input character, each column is the encoding)
     """
-    arr_length = len(arr)
-    encoded = np.zeros((n_chars, arr_length))
-    for i in range(arr_length):
-        encoded[char_to_idx[arr[i]], i] = 1
-    return encoded
-
-
-def one_hot_decode(arr):
-    """
-    :param arr: Matrix of encoded characters
-    :return: List of decoded characters
-    """
-    decoded = []
-    for i in range(arr.shape[1]):
-        idx = np.argmax(arr[:, i])
-        decoded.append(idx_to_char[idx])
-    return decoded
+    one_hot = np.zeros((np.multiply(*arr.shape), n_labels), dtype=np.float32)
+    one_hot[np.arange(one_hot.shape[0]), arr.flatten()] = 1
+    one_hot = one_hot.reshape((*arr.shape, n_labels))
+    return one_hot
 
 
 def get_batches(arr, batch_size, seq_length):
@@ -72,6 +62,10 @@ def get_batches(arr, batch_size, seq_length):
         except IndexError:
             y[:, :-1], y[:, -1] = x[:, 1:], arr[:, 0]
         yield x, y
+
+
+batches = get_batches(encoded, 8, 50)
+x, y = next(batches)
 
 
 class LSTM(nn.Module):
@@ -135,7 +129,7 @@ def train(model, data, epochs, batch_size, lr, clip, val_frac, seq_length, print
             counter += 1
 
             """ One hot encode the input and make them torch tensors """
-            x = one_hot_decode(x, n_chars)
+            x = one_hot_encode(x, n_chars)
             inputs, targets = torch.from_numpy(x), torch.from_numpy(y)
 
             """ Need to create new variables for the hidden state, 
