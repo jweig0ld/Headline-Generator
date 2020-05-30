@@ -1,11 +1,10 @@
 import torch
+import torchvision
 from torch import nn
 import numpy as np
 import torch.nn.functional as F
 
-""" 
-TODO: Get the training data in a readable format. 
-"""
+
 training_data = ['H', 'e', 'l', 'l', 'o']
 char_batch = training_data[:1000]  # Taking the characters for the entire dataset is excessive
 
@@ -15,7 +14,7 @@ char_to_idx = {ch: i for i, ch in enumerate(chars)}
 idx_to_char = {i: ch for i, ch in enumerate(chars)}
 
 # Set hyperparameters
-learning_rate = 1e-3
+lr = 1e-3
 n_hidden = 512
 n_layers = 3
 batch_size = 128
@@ -83,6 +82,8 @@ class LSTM(nn.Module):
         self.dropout_probability = dropout_probability
         self.leaning_rate = learning_rate
         self.chars = chars
+        self.int2char = dict(enumerate(self.chars))
+        self.char2int = {ch: ii for ii, ch in self.int2char.items()}
 
         self.lstm = nn.LSTM(input_size=len(self.chars), hidden_size=n_hidden, num_layers=n_layers, bias=True,
                             batch_first=True, dropout=dropout_probability)
@@ -179,3 +180,73 @@ def train(model, data, epochs, batch_size, lr, clip, val_frac, seq_length, print
 
 model = LSTM(chars, n_hidden, n_layers)
 print(model)
+
+train(model, encoded, epochs=n_epochs, batch_size=batch_size, seq_length=seq_length, lr=lr, print_every=10)
+
+model_name = 'rnn_20_epoch.net'
+
+checkpoint = {'n_hidden': model.n_hidden,
+              'n_layers': model.n_layers,
+              'state_dict': model.state_dict(),
+              'tokens': model.chars}
+
+with open(model_name, 'wb') as f:
+    torch.save(checkpoint, f)
+
+
+def predict(model, char, h=None, top_k=None):
+    """ Given a character, return the next character """
+
+    x = np.array([[model.char2int[char]]])
+    x = one_hot_encode(x, len(model.chars))
+    inputs = torch.from_numpy(x)
+
+    h = tuple([each.data for each in h])
+    out, h = model(inputs, h)
+
+    p = F.softmax(out, dim=1).data
+
+    if top_k is None:
+        top_ch = np.arange(len(model.chars))
+    else:
+        p, top_ch = p.topk(top_k)
+        top_ch = top_ch.numpy().squeeze()
+
+    """ Select the next likely character with some element of randomness """
+    p = p.numpy().squeeze()
+    char = np.random.choice(top_ch, p=p / p.sum())
+
+    return model.int2char[char], h
+
+
+def sample(model, size, prime='Once upon a time', top_k=None):
+    """ Change everything back to eval mode """
+    model.eval()
+
+    chars = [ch for ch in prime]
+    h = model.init_h(1)
+    for ch in prime:
+        char, h = predict(model, ch, h, top_k=top_k)
+
+    chars.append(char)
+
+    """ Pass in previous character to get a new one """
+    for ii in range(size):
+        char, h = predict(model, chars[-1], h, top_k=top_k)
+        chars.append(char)
+
+    return ''.join(chars)
+
+
+print(sample(model, 2000, prime='Once upon a time', top_k=5))
+
+""" Here we have loaded in a model that has trained over 20 epochs 'rnn_20_epoch.net' """
+with open('rnn_20_epoch.net', 'rb') as f:
+    checkpoint = torch.load(f)
+
+loaded = LSTM(checkpoint['tokens'], n_hidden=checkpoint['n_hidden'], n_layers=checkpoint['n_layers'])
+loaded.load_state_dict(checkpoint['state_dict'])
+
+""" Sample using a loaded model """
+print(sample(loaded, 2000, top_k=5, prime="The beautiful"))
+
