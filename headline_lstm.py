@@ -96,4 +96,21 @@ def train(model, data, epochs, batch_size, lr, clip, val_frac, seq_length, print
     val_idx = int(len(data) * (1 - val_frac))
     data, val_data = data[:val_idx], data[val_idx:]
 
-    """ This is where I left off - still need to deal with the batches and the input data """
+    counter = 0
+    n_chars = len(model.chars)
+
+    for epoch in range(epochs):
+
+        h = model.init_h(batch_size)
+
+        for x, y in get_batches(data, batch_size, seq_length):
+            counter += 1
+
+            """ One hot encode the input and make them torch tensors """
+            x = one_hot_decode(x, n_chars)
+            inputs, targets = torch.from_numpy(x), torch.from_numpy(y)
+
+            """ Need to create new variables for the training state, 
+            otherwise we backprop through the entire training history """
+
+
