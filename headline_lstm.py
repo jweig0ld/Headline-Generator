@@ -16,8 +16,11 @@ idx_to_char = {i: ch for i, ch in enumerate(chars)}
 
 # Set hyperparameters
 learning_rate = 1e-3
-sequence_length = 25
-hidden_size = 100
+n_hidden = 512
+n_layers = 3
+batch_size = 128
+seq_length = 100
+n_epochs = 20
 
 
 def one_hot_encode(arr, n_chars):
@@ -46,7 +49,30 @@ def one_hot_decode(arr):
 
 
 def get_batches(arr, batch_size, seq_length):
-    return "You're gonna nail this"
+    """
+    :param arr: The encoded array that we want to make batches from
+    :param batch_size: The number of sequences that we want in a batch
+    :param seq_length: The length of each sequence that we want
+    :return: Yielding batches
+    """
+
+    total_size = batch_size * seq_length
+    """ Total number of batches that we can make: """
+    n_batches = len(arr) // total_size
+
+    """ We only want to keep enough characters to make full batches """
+    arr = arr[:n_batches * total_size]
+    """ Reshape it into rows"""
+    arr = arr.reshape((batch_size, -1))
+
+    for i in range(0, arr.shape[1], seq_length):
+        x = arr[:, i:i + seq_length]
+        y = np.zeros_like(x)
+        try:
+            y[:, :-1], y[:, -1] = x[:, 1:], arr[:, i + seq_length]
+        except IndexError:
+            y[:, :-1], y[:, -1] = x[:, 1:], arr[:, 0]
+        yield x, y
 
 
 class LSTM(nn.Module):
@@ -76,6 +102,7 @@ class LSTM(nn.Module):
              weight.new(self.n_layers, batch_size, self.n_hidden).zero_())
         return h
 
+
 def train(model, data, epochs, batch_size, lr, clip, val_frac, seq_length, print_every):
     """
     :param model: LSTM Network
@@ -91,7 +118,7 @@ def train(model, data, epochs, batch_size, lr, clip, val_frac, seq_length, print
     model.train()
 
     optim = torch.optim.Adam(model.parameters(), lr)
-    loss_type = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss()
 
     val_idx = int(len(data) * (1 - val_frac))
     data, val_data = data[:val_idx], data[val_idx:]
@@ -110,7 +137,45 @@ def train(model, data, epochs, batch_size, lr, clip, val_frac, seq_length, print
             x = one_hot_decode(x, n_chars)
             inputs, targets = torch.from_numpy(x), torch.from_numpy(y)
 
-            """ Need to create new variables for the training state, 
+            """ Need to create new variables for the hidden state, 
             otherwise we backprop through the entire training history """
+            h = tuple([each.data for each in h])
+
+            model.zero_grad()
+
+            output, h = model(inputs, h)
+
+            loss = criterion(output, targets.view(batch_size * seq_length))
+            loss.backward()
+
+            nn.utils.clip_grad_norm_(model.parameters(), clip)
+            optim.step()
+
+            """ Loss statistics """
+            if counter % print_every == 0:
+                val_h = model.init_hidden(batch_size)
+                val_losses = []
+                model.eval()
+                for x, y in get_batches(val_data, batch_size, seq_length):
+                    """ One hot encode the data and make them Tensors """
+                    x = one_hot_encode(x, n_chars)
+                    x, y = torch.from_numpy(x), torch.from_numpy(y)
+                    """ Creating new variables for the hidden state, otherwise
+                    we would backpropagate through the entire training history """
+                    val_h = tuple([each.data for each in val_h])
+
+                    outputs, val_h = model(inputs, val_h)
+                    val_loss = criterion(output, targets.view(batch_size * seq_length))
+                    val_losses.append(val_loss.item())
+
+                """ Reset to train mode after iterating through the validation data """
+                model.train()
+
+                print("Epoch: {}/{}...".format(epoch + 1, epochs),
+                      "Step: {}...".format(counter),
+                      "Loss: {:.4f}...".format(loss.item()),
+                      "Val Loss: {:.4f}".format(np.mean(val_losses)))
 
 
+model = LSTM(chars, n_hidden, n_layers)
+print(model)
