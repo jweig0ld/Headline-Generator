@@ -227,6 +227,8 @@ def predict(model, char, h=None, top_k=None):
     out, h = model(inputs, h)
 
     p = F.softmax(out, dim=1).data
+    if cuda:
+        p = p.cpu()
 
     if top_k is None:
         top_ch = np.arange(len(model.chars))
