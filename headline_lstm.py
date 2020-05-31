@@ -3,8 +3,10 @@ from torch import nn
 import numpy as np
 import torch.nn.functional as F
 
+# Check whether we can train on the GPU
+cuda = torch.cuda.is_available()
 
-with open('tales.txt', 'r') as f:
+with open('headlines_1024.txt', 'r') as f:
     text = f.read()
 
 text[:100]
@@ -22,7 +24,8 @@ n_hidden = 512
 n_layers = 3
 batch_size = 128
 seq_length = 100
-n_epochs = 20
+n_epochs = 200
+dropout_probability = 0.3
 
 
 def one_hot_encode(arr, n_labels):
@@ -148,7 +151,7 @@ def train(model, data, epochs, batch_size, lr, clip, val_frac, seq_length, print
 
             """ Loss statistics """
             if counter % print_every == 0:
-                val_h = model.init_hidden(batch_size)
+                val_h = model.init_h(batch_size)
                 val_losses = []
                 model.eval()
                 for x, y in get_batches(val_data, batch_size, seq_length):
@@ -172,10 +175,10 @@ def train(model, data, epochs, batch_size, lr, clip, val_frac, seq_length, print
                       "Val Loss: {:.4f}".format(np.mean(val_losses)))
 
 
-model = LSTM(chars, n_hidden, n_layers)
+model = LSTM(chars=chars, n_hidden=n_hidden, n_layers=n_layers, dropout_probability=dropout_probability, learning_rate=lr)
 print(model)
 
-train(model, encoded, epochs=n_epochs, batch_size=batch_size, seq_length=seq_length, lr=lr, print_every=10)
+train(model, encoded, epochs=n_epochs, batch_size=batch_size, seq_length=seq_length, lr=lr, print_every=10, val_frac=0.1, clip=5)
 
 model_name = 'rnn_20_epoch.net'
 
@@ -234,13 +237,14 @@ def sample(model, size, prime='Once upon a time', top_k=None):
 
 print(sample(model, 2000, prime='Once upon a time', top_k=5))
 
-""" Here we have loaded in a model that has trained over 20 epochs 'rnn_20_epoch.net' """
-with open('rnn_20_epoch.net', 'rb') as f:
-    checkpoint = torch.load(f)
 
-loaded = LSTM(checkpoint['tokens'], n_hidden=checkpoint['n_hidden'], n_layers=checkpoint['n_layers'])
-loaded.load_state_dict(checkpoint['state_dict'])
+def load_pretrained_model(model_filename):
 
-""" Sample using a loaded model """
-print(sample(loaded, 2000, top_k=5, prime="The beautiful"))
+    with open(model_filename, 'rb') as f:
+        checkpoint = torch.load(f)
 
+    loaded = LSTM(checkpoint['tokens'], n_hidden=checkpoint['n_hidden'], n_layers=checkpoint['n_layers'], dropout_probability=dropout_probability, learning_rate=lr)
+    loaded.load_state_dict(checkpoint['state_dict'])
+
+    """ Sample using a loaded model """
+    print(sample(loaded, 2000, top_k=5, prime="The beautiful"))

@@ -14,3 +14,14 @@ def json_to_text(json_file, destination_file):
     print("Process completed.")
 
 
+def generate_training_samples(n_samples, source_file, destination_file):
+
+    with open(source_file, 'r') as f, open(destination_file, 'w') as g:
+        lines = [line for line in f][:n_samples]
+        g.writelines(lines)
+    f.close()
+    g.close()
+    print("Process completed.")
+
+
+generate_training_samples(1024, 'headlines.txt', 'headlines_1024.txt')
