@@ -1,7 +1,7 @@
 import json
 
 
-def json_to_text(json_file, destination_file):
+def json_to_txt(json_file, destination_file):
 
     with open(json_file, 'r') as f:
         d = json.load(f)
@@ -24,4 +24,3 @@ def generate_training_samples(n_samples, source_file, destination_file):
     print("Process completed.")
 
 
-generate_training_samples(1024, 'headlines.txt', 'headlines_1024.txt')

@@ -6,6 +6,11 @@ import torch.nn.functional as F
 # Check whether we can train on the GPU
 cuda = torch.cuda.is_available()
 
+if cuda:
+    print("Training with CUDA")
+else:
+    print("No CUDA available... reverting to CPU")
+
 with open('headlines_1024.txt', 'r') as f:
     text = f.read()
 
@@ -95,9 +100,13 @@ class LSTM(nn.Module):
         return out, h
 
     def init_h(self, batch_size):
-        weight = next(self.parameters())
-        h = (weight.new(self.n_layers, batch_size, self.n_hidden).zero_(),
-             weight.new(self.n_layers, batch_size, self.n_hidden).zero_())
+        weight = next(self.parameters()).data
+        if cuda:
+            h = (weight.new(self.n_layers, batch_size, self.n_hidden).zero_().cuda(),
+                 weight.new(self.n_layers, batch_size, self.n_hidden).zero_().cuda())
+        else:
+            h = (weight.new(self.n_layers, batch_size, self.n_hidden).zero_(),
+                 weight.new(self.n_layers, batch_size, self.n_hidden).zero_())
         return h
 
 
@@ -121,8 +130,13 @@ def train(model, data, epochs, batch_size, lr, clip, val_frac, seq_length, print
     val_idx = int(len(data) * (1 - val_frac))
     data, val_data = data[:val_idx], data[val_idx:]
 
+    if cuda:
+        model.cuda()
+
     counter = 0
     n_chars = len(model.chars)
+
+
 
     for epoch in range(epochs):
 
@@ -134,6 +148,9 @@ def train(model, data, epochs, batch_size, lr, clip, val_frac, seq_length, print
             """ One hot encode the input and make them torch tensors """
             x = one_hot_encode(x, n_chars)
             inputs, targets = torch.from_numpy(x), torch.from_numpy(y)
+
+            if cuda:
+                inputs, targets = inputs.cuda(), targets.cuda()
 
             """ Need to create new variables for the hidden state, 
             otherwise we backprop through the entire training history """
@@ -161,6 +178,11 @@ def train(model, data, epochs, batch_size, lr, clip, val_frac, seq_length, print
                     """ Creating new variables for the hidden state, otherwise
                     we would backpropagate through the entire training history """
                     val_h = tuple([each.data for each in val_h])
+
+                    inputs, targets = x, y
+
+                    if cuda:
+                        inputs, targets = inputs.cuda(), targets.cuda()
 
                     outputs, val_h = model(inputs, val_h)
                     val_loss = criterion(output, targets.view(batch_size * seq_length))
@@ -198,6 +220,9 @@ def predict(model, char, h=None, top_k=None):
     x = one_hot_encode(x, len(model.chars))
     inputs = torch.from_numpy(x)
 
+    if cuda:
+        inputs = inputs.cuda()
+
     h = tuple([each.data for each in h])
     out, h = model(inputs, h)
 
@@ -217,6 +242,9 @@ def predict(model, char, h=None, top_k=None):
 
 
 def sample(model, size, prime='Once upon a time', top_k=None):
+
+    if cuda:
+        model.cuda()
     """ Change everything back to eval mode """
     model.eval()
 
